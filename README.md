@@ -19,9 +19,22 @@ Alternatively, you can download the binaries from the [release page][2].
 ### Running
 
 ```sh
-$ go build csp_collector.go
+$ CGO_ENABLED=0 go build csp_collector.go
 $ ./csp_collector
 ```
+The `CGO_ENABLED=0` flag makes the build compatible with alpine linux in a docker container.
+
+### Command Line Options
+
+| Flag  | Description |
+|-------|:------------|
+|version|Shows the version string before exiting|
+|debug  |Runs in debug mode producing more verbose output|
+|port	|Port to run on, default 8080|
+|filter-file|Reads the filter list from the specified file. Note on filter per line|
+
+
+See the sample.filterlist.txt file as an example of the filter list in a file
 
 ### Output formats
 
