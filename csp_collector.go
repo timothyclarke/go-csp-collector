@@ -110,7 +110,14 @@ func main() {
 
 	if *version {
 		fmt.Printf("csp-collector (%s)\n", Rev)
-		os.Exit(0)
+	}
+
+	if len(blockedURIfile) > 0 {
+		content, err := ioutil.ReadFile(blockedURIfile)
+		if err != nil {
+			fmt.Printf("Error reading Blocked File list : %s", blockedURIfile)
+		}
+		ignoredBlockedURIs = delete_empty(strings.Split(string(content), "\n"))
 	}
 
 	if blockedURIfile != "" {
@@ -151,6 +158,7 @@ func main() {
 	http.HandleFunc("/", handleViolationReport)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", strconv.Itoa(listenPort)), nil))
 }
+
 
 func handleViolationReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" && r.URL.Path == "/_healthcheck" {
