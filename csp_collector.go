@@ -117,7 +117,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("Error reading Blocked File list : %s", blockedURIfile)
 		}
-		ignoredBlockedURIs = delete_empty(strings.Split(string(content), "\n"))
+		ignoredBlockedURIs = trimEmpty(strings.Split(string(content), "\n"))
 	}
 
 	if blockedURIfile != "" {
