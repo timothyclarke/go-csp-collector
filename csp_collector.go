@@ -78,9 +78,6 @@ var (
 		"wvjbscheme://__wvjb_queue_message__",
 		"nativebaiduhd://adblock",
 		"bdvideo://error",
-		"https://fonts.gstatic.com/s/roboto/v18/KFO",
-		"https://fonts.gstatic.com/s/googlesans/v9/4Ua",
-		"https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu72xKOzY.woff2",
 	}
 
 	// TCP Port to listen on
