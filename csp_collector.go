@@ -5,11 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	graylog "github.com/Devatoria/go-graylog"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -74,10 +78,17 @@ var (
 		"wvjbscheme://__wvjb_queue_message__",
 		"nativebaiduhd://adblock",
 		"bdvideo://error",
+		"https://fonts.gstatic.com/s/roboto/v18/KFO",
+		"https://fonts.gstatic.com/s/googlesans/v9/4Ua",
+		"https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu72xKOzY.woff2",
 	}
 
 	// TCP Port to listen on
 	listenPort int
+
+	// Graylog Host and Port eg udp://127.0.0.1:12201
+	// If set then gelf logging is enabled. Defaults to unset string
+	graylogAddr string
 )
 
 func init() {
@@ -101,11 +112,13 @@ func main() {
 	flag.StringVar(&outputFormat, "output-format", "text", "Define how the violation reports are formatted for output.\nDefaults to 'text'. Valid options are 'text' or 'json'")
 	flag.StringVar(&blockedURIfile, "filter-file", "", "Blocked URI Filter file")
 	flag.IntVar(&listenPort, "port", 8080, "Port to listen on")
+	flag.StringVar(&graylogAddr, "graylog", "", "Greylog proto, host and port eg udp://127.0.0.1:12201")
 
 	flag.Parse()
 
 	if *version {
 		fmt.Printf("csp-collector (%s)\n", Rev)
+		os.Exit(0)
 	}
 
 	if len(blockedURIfile) > 0 {
@@ -148,13 +161,16 @@ func main() {
 	} else {
 		log.Debug("Using Filter list from internal list")
 	}
+	if graylogAddr != "" {
+		log.Debug("Graylog logging Enabled")
+		log.Debugf("Graylog Address : %s", graylogAddr)
+	}
 	log.Debugf("Blocked URI List : %s", ignoredBlockedURIs)
 	log.Debugf("Listening on TCP Port : %s", strconv.Itoa(listenPort))
 
 	http.HandleFunc("/", handleViolationReport)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", strconv.Itoa(listenPort)), nil))
 }
-
 
 func handleViolationReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" && r.URL.Path == "/_healthcheck" {
@@ -199,6 +215,10 @@ func handleViolationReport(w http.ResponseWriter, r *http.Request) {
 		"script_sample":       report.Body.ScriptSample,
 		"status_code":         report.Body.StatusCode,
 	}).Info()
+
+	if graylogAddr != "" {
+		gelfLog(report)
+	}
 }
 
 func validateViolation(r CSPReport) error {
@@ -210,4 +230,56 @@ func validateViolation(r CSPReport) error {
 	}
 
 	return nil
+}
+
+func gelfLog(r CSPReport) {
+
+	// Initalize a graylog transport (default to UDP)
+	glt := graylog.UDP
+
+	// Parse the URL for scheme (tcp or udp) & host:port
+	glh, _ := url.Parse(graylogAddr)
+	scheme := strings.ToUpper(glh.Scheme)
+
+	// Further split the host:port into host & port
+	host, strPort, _ := net.SplitHostPort(glh.Host)
+
+	// Port is a string, we need to convert to an unsigned int for graylog
+	iPort, _ := strconv.Atoi(strPort)
+	port := uint(iPort)
+
+	// Initialize a new graylog client with TLS
+	if strings.ToLower(scheme) == "tcp" {
+		glt = graylog.TCP
+
+	}
+
+	gl, err := graylog.NewGraylog(graylog.Endpoint{
+		Transport: glt,
+		Address:   host,
+		Port:      port,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	reportURI, _ := url.Parse(r.Body.DocumentURI)
+	blockedURI, _ := url.Parse(r.Body.BlockedURI)
+	shortMessage := fmt.Sprintf("CSP Voilation in %s from %s", r.Body.ViolatedDirective, blockedURI.Host)
+
+	// Send a message
+	err = gl.Send(graylog.Message{
+		Version:      "1.1",
+		Host:         reportURI.Host,
+		ShortMessage: shortMessage,
+		Timestamp:    time.Now().Unix(),
+		Level:        1,
+		Extra: map[string]string{
+			"document-uri":        r.Body.DocumentURI,
+			"referrer":            r.Body.Referrer,
+			"blocked-uri":         r.Body.BlockedURI,
+			"violated-directive":  r.Body.ViolatedDirective,
+			"effective-directive": r.Body.EffectiveDirective,
+		},
+	})
 }
