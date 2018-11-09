@@ -47,6 +47,9 @@ var (
 	// Flag for toggling output format.
 	outputFormat string
 
+	// Flag to toggle http status code on filtered content
+	errorOnBlockedURIs bool
+
 	// Shared defaults for the logger output. This ensures that we are
 	// using the same keys for the `FieldKey` values across both formatters.
 	logFieldMapDefaults = log.FieldMap{
@@ -110,6 +113,7 @@ func trimEmpty(s []string) []string {
 func main() {
 	version := flag.Bool("version", false, "Display the version")
 	flag.BoolVar(&debugFlag, "debug", false, "Output additional logging for debugging")
+	flag.BoolVar(&errorOnBlockedURIs, "error-on-blocked", true, "HTTP Status Code when a filtered report is submitted.\nDefaults to 'true' which is a 400 status code. 'false' causes a 204 status code.")
 	flag.StringVar(&outputFormat, "output-format", "text", "Define how the violation reports are formatted for output.\nDefaults to 'text'. Valid options are 'text' or 'json'")
 	flag.StringVar(&blockedURIfile, "filter-file", "", "Blocked URI Filter file")
 	flag.IntVar(&listenPort, "port", 8080, "Port to listen on")
@@ -120,14 +124,6 @@ func main() {
 	if *version {
 		fmt.Printf("csp-collector (%s)\n", Rev)
 		os.Exit(0)
-	}
-
-	if len(blockedURIfile) > 0 {
-		content, err := ioutil.ReadFile(blockedURIfile)
-		if err != nil {
-			fmt.Printf("Error reading Blocked File list : %s", blockedURIfile)
-		}
-		ignoredBlockedURIs = trimEmpty(strings.Split(string(content), "\n"))
 	}
 
 	if blockedURIfile != "" {
@@ -200,7 +196,11 @@ func handleViolationReport(w http.ResponseWriter, r *http.Request) {
 
 	reportValidation := validateViolation(report)
 	if reportValidation != nil {
-		http.Error(w, reportValidation.Error(), http.StatusBadRequest)
+		if errorOnBlockedURIs {
+			http.Error(w, reportValidation.Error(), http.StatusBadRequest)
+		} else {
+			http.Error(w, reportValidation.Error(), http.StatusAccepted)
+		}
 		log.Debug(fmt.Sprintf("Received invalid payload: %s", reportValidation.Error()))
 		return
 	}
@@ -225,7 +225,7 @@ func handleViolationReport(w http.ResponseWriter, r *http.Request) {
 func validateViolation(r CSPReport) error {
 	for _, value := range ignoredBlockedURIs {
 		if strings.HasPrefix(r.Body.BlockedURI, value) == true {
-			err := fmt.Errorf("blocked URI ('%s') is an invalid resource", value)
+			err := fmt.Errorf("Blocked URI ('%s') is a filtered resource", value)
 			return err
 		}
 	}
